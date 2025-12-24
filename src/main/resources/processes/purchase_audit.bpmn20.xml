@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://www.flowable.org/processdef">
+
+    <process id="purchase_audit" name="采购单审批流程" isExecutable="true">
+        <startEvent id="start"/>
+
+        <sequenceFlow sourceRef="start" targetRef="managerTask"/>
+
+        <!-- 1. 经理审批 -->
+        <!-- flowable:candidateGroups="purchase_mgr" 表示这个任务发给所有采购经理 -->
+        <userTask id="managerTask" name="部门经理审批" flowable:candidateGroups="purchase_mgr"/>
+
+        <sequenceFlow sourceRef="managerTask" targetRef="judgeGateway"/>
+
+        <!-- 2. 金额判断网关 -->
+        <exclusiveGateway id="judgeGateway"/>
+
+        <sequenceFlow sourceRef="judgeGateway" targetRef="bossTask">
+            <!-- 连线条件：金额 >= 5000 -->
+            <conditionExpression xsi:type="tFormalExpression">${money >= 5000}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow sourceRef="judgeGateway" targetRef="systemAuditTask">
+            <!-- 连线条件：金额 < 5000，直接跳过老板 -->
+            <conditionExpression xsi:type="tFormalExpression">${money &lt; 5000}</conditionExpression>
+        </sequenceFlow>
+
+        <!-- 3. 老板审批 -->
+        <userTask id="bossTask" name="总经理审批" flowable:candidateGroups="admin"/>
+
+        <sequenceFlow sourceRef="bossTask" targetRef="systemAuditTask"/>
+
+        <!-- 4. 系统自动服务 (Java Delegate) -->
+        <!-- delegateExpression 对应 Spring 容器里的 Bean 名字 -->
+        <serviceTask id="systemAuditTask" name="自动入库" flowable:delegateExpression="${purchaseAuditDelegate}"/>
+
+        <sequenceFlow sourceRef="systemAuditTask" targetRef="end"/>
+
+        <endEvent id="end"/>
+    </process>
+</definitions>

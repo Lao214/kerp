@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.kerp.modules.psi.mapper.PsiInventoryMapper">
+
+    <!-- 多表关联查询 SQL -->
+    <select id="selectInventoryPage" resultType="com.example.kerp.modules.psi.vo.InventoryVO">
+        SELECT
+            i.id,
+            i.warehouse_id,
+            w.name AS warehouse_name,
+            i.product_id,
+            p.product_code,
+            p.product_name,
+            p.unit,
+            i.stock_quantity,
+            i.update_time
+        FROM
+            psi_inventory i
+        LEFT JOIN
+            base_warehouse w ON i.warehouse_id = w.id
+        LEFT JOIN
+            base_product p ON i.product_id = p.id
+        <where>
+            <!-- 逻辑删除过滤 -->
+            <!-- 如果你的主表没有 is_deleted 可以不写，但仓库和商品如果有，建议关联时过滤 -->
+
+            <!-- 动态查询条件 -->
+            <if test="warehouseId != null">
+                AND i.warehouse_id = #{warehouseId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                p.product_name LIKE CONCAT('%', #{keyword}, '%')
+                OR
+                p.product_code LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY i.update_time DESC
+    </select>
+
+</mapper>

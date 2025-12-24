@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.kerp.modules.psi.mapper.PurchaseOrderItemMapper">
+
+    <!-- 多表关联查询 SQL -->
+    <select id="listWithProductInfo" resultType="com.example.kerp.modules.psi.entity.PurchaseOrderItem">
+        SELECT
+            poi.*,
+            bp.product_name,
+            bp.product_code,
+            bp.unit
+        FROM
+            psi_purchase_order_item poi
+        LEFT JOIN
+            base_product bp ON poi.product_id = bp.id
+        WHERE
+            poi.order_id = #{orderId}
+    </select>
+
+</mapper>

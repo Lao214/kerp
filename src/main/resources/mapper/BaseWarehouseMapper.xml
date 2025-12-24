@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.kerp.modules.basic.mapper.BaseWarehouseMapper">
+
+    <!-- 多表关联查询 SQL -->
+    <select id="getOptions" resultType="com.example.kerp.modules.basic.vo.OptionVO">
+        SELECT
+            bw.id as 'id',
+            bw.code as 'value',
+            bw.name as 'label'
+        FROM
+            base_warehouse bw
+        ORDER BY
+            bw.create_time DESC
+    </select>
+
+</mapper>

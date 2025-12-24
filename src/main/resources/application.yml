@@ -1,0 +1,80 @@
+server:
+  port: 8727
+  servlet:
+    context-path: / # 项目根路径，默认是 /
+
+spring:
+  application:
+    name: kerp-server # 服务名称
+  profiles:
+    active: dev # 当前环境
+
+  # 💾 数据库连接配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 注意: kerp 是我们之前建库的名字
+    # serverTimezone=Asia/Shanghai 解决时区差8小时问题
+    # allowPublicKeyRetrieval=true 解决 MySQL 8.0 连接时的 RSA 公钥错误
+    url: jdbc:mysql://localhost:3306/kerp?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root1234
+
+  data:
+    redis:
+      host: localhost       # Redis 服务器地址
+      port: 6379            # Redis 端口
+      database: 0           # 数据库索引
+      timeout: 10s          # 连接超时时间
+      lettuce:
+        pool:
+          max-active: 8     # 最大连接数
+          max-wait: -1ms    # 最大阻塞等待时间
+          max-idle: 8       # 最大空闲连接
+          min-idle: 0       # 最小空闲连接
+
+redisson:
+  address: redis://localhost:6379
+
+
+# 🚀 MyBatis-Plus 核心配置
+mybatis-plus:
+  # XML 映射文件位置 (放在 resources/mapper 下)
+  mapper-locations: classpath*:mapper/**/*.xml
+  # 实体类扫描包 (根据你的包名修改，如果叫 com.example.kerp 就改成对应的)
+  type-aliases-package: com.example.kerp.**.entity
+
+  configuration:
+    # 开启驼峰命名转换 (user_name -> userName)
+    map-underscore-to-camel-case: true
+    # 打印 SQL 日志到控制台 (开发神器，上线时记得关掉或换成 logback)
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+  global-config:
+    banner: false # 关掉启动时的 MP 广告
+    db-config:
+      # ❄️ 主键策略: 雪花算法 (ASSIGN_ID)
+      # 自动生成 19 位 Long 类型 ID，分布式环境下唯一，比自增 ID 强太多
+      id-type: assign_id
+      # 🗑️ 逻辑删除配置
+      # 也就是: 删数据时不真删，只是把 is_deleted 字段改成 1
+      logic-delete-field: is_deleted  # 对应数据库字段
+      logic-delete-value: 1           # 删除状态
+      logic-not-delete-value: 0       # 正常状态
+
+sa-token:
+  token-name: kerp-token    # 这里的名字要和前端 header 里的 key 一致
+  timeout: 2592000          # token有效期 30 天
+  active-timeout: -1      # 临时有效期 (不限制)
+  is-concurrent: true       # 允许同一账号多地登录
+  is-share: false           # 在多人登录同一账号时，是否共用一个 token
+  token-style: uuid         # 生成 token 的风格
+  is-log: false             # 关闭日志
+
+flowable:
+  # 关闭自带的身份验证，用我们自己的业务逻辑
+  idm:
+    enabled: false
+  # 自动部署流程文件
+  check-process-definitions: true
+  # 异步执行器 (可选，生产环境建议开)
+  async-executor-activate: false
