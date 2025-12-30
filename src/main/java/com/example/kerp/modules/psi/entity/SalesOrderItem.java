@@ -12,6 +12,7 @@ import com.example.kerp.common.entity.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @EqualsAndHashCode(callSuper = false)
@@ -38,6 +39,9 @@ public class SalesOrderItem {
 
     @TableField(exist = false)
     private String unit;
+
+    @TableField(exist = false)
+    private List<String> snList;  // SN列表 (仅序列号管理有效)
     /**
      * 逻辑删除
      * select * 时会自动带上 where is_deleted = 0

@@ -11,11 +11,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.kerp.modules.basic.entity.BaseProduct;
 import com.example.kerp.modules.basic.mapper.BaseProductMapper;
+import com.example.kerp.modules.basic.service.BaseCustomerService;
+import com.example.kerp.modules.basic.service.BaseProductService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class BaseProductServiceImpl extends ServiceImpl<BaseProductMapper, BaseProduct> {
+public class BaseProductServiceImpl extends ServiceImpl<BaseProductMapper, BaseProduct> implements BaseProductService {
 
     @Transactional(rollbackFor = Exception.class)
     public boolean saveProduct(BaseProduct product) {

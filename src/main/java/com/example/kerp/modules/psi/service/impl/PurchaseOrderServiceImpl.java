@@ -14,9 +14,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.kerp.modules.basic.service.BaseSupplierService;
 import com.example.kerp.modules.psi.dto.PurchaseOrderDTO;
+import com.example.kerp.modules.psi.entity.PsiSerial;
 import com.example.kerp.modules.psi.entity.PurchaseOrder;
 import com.example.kerp.modules.psi.entity.PurchaseOrderItem;
-import com.example.kerp.modules.psi.entity.SalesOrder;
+import com.example.kerp.modules.psi.mapper.PsiSerialMapper;
 import com.example.kerp.modules.psi.mapper.PurchaseOrderMapper;
 import com.example.kerp.modules.psi.service.PsiInventoryService;
 import com.example.kerp.modules.psi.service.PurchaseOrderItemService;
@@ -47,6 +48,9 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
     @Autowired
     private RuntimeService runtimeService; // 注入 Flowable
 
+    @Autowired
+    private PsiSerialMapper serialMapper; // 注入 Mapper
+
 
     @Transactional(rollbackFor = Exception.class)
     public void audit(Long orderId) {
@@ -71,7 +75,7 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         // 3. 循环入库 (核心！)
         for (PurchaseOrderItem item : items) {
             // 给单据指定的仓库，增加对应商品的库存
-            inventoryService.increaseStock(order.getWarehouseId(), item.getProductId(), item.getQuantity());
+            inventoryService.increaseStockComplex(order.getWarehouseId(), item, order.getOrderNo());
         }
 
         // 4. 修改单据状态 -> 已审核(1)
@@ -147,6 +151,39 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
         dto.setTotalQuantity(totalQty);
         this.saveOrUpdate(dto); // 此时 dto.getId() 就有值了
 
+        // 4. 处理子表
+        // 4.1 先删除旧的明细 (为了支持修改功能)
+        if (dto.getId() != null) {
+            itemService.remove(new LambdaQueryWrapper<PurchaseOrderItem>().eq(PurchaseOrderItem::getOrderId, dto.getId()));
+
+            // 🔥 同时也删除旧的 SN 码 (防止用户修改时删减了SN)
+            // 逻辑：删除所有来源单号 = 当前单号 且 状态 = 0 (待入库) 的记录
+            serialMapper.delete(new LambdaQueryWrapper<PsiSerial>()
+                    .eq(PsiSerial::getInOrderNo, dto.getOrderNo())
+                    .eq(PsiSerial::getStatus, 0));
+        }
+
+        // 4.2 保存新明细 & 🔥 保存 SN 码
+        for (PurchaseOrderItem item : dto.getItems()) {
+            item.setOrderId(dto.getId());
+            itemService.save(item); // 保存明细
+
+            // --- 🔥此处为新增逻辑：持久化 SN 码 ---
+            // 只有序列号管理的商品 (manageType=2) 才处理
+            // 注意：这里需要前端传 manageType，或者你先查一遍商品表
+            if (item.getSnList() != null && !item.getSnList().isEmpty()) {
+                for (String sn : item.getSnList()) {
+                    PsiSerial serial = new PsiSerial();
+                    serial.setWarehouseId(dto.getWarehouseId()); // 关联仓库
+                    serial.setProductId(item.getProductId());    // 关联商品
+                    serial.setSnCode(sn);
+                    serial.setInOrderNo(dto.getOrderNo());       // 记录来源单号
+                    serial.setStatus(0);                         // ⚠️ 重点：状态设为 0 (待入库)
+                    serialMapper.insert(serial);
+                }
+            }
+        }
+
         // 🔥🔥🔥 启动流程实例 🔥🔥🔥
         Map<String, Object> variables = new HashMap<>();
         // 传入金额，供网关判断 (money >= 5000 ?)
@@ -154,18 +191,6 @@ public class PurchaseOrderServiceImpl extends ServiceImpl<PurchaseOrderMapper, P
 
         // key: 流程图ID, businessKey: 采购单ID, variables: 流程变量
         runtimeService.startProcessInstanceByKey("purchase_audit", dto.getId().toString(), variables);
-
-        // 4. 保存子表
-        // 4.1 如果是修改，先删除旧的子表数据 (简单粗暴)
-        if (dto.getId() != null) {
-            // itemService.remove(new LambdaQueryWrapper<PurchaseOrderItem>().eq(PurchaseOrderItem::getOrderId, dto.getId()));
-            // 为了简单，我们暂且假设这里只处理新增。修改逻辑后面细化。
-        }
-
-        // 4.2 关联主表 ID 并保存新明细
-        Long orderId = dto.getId();
-        items.forEach(item -> item.setOrderId(orderId));
-        itemService.saveBatch(items); // 批量插入
 
         return true;
     }

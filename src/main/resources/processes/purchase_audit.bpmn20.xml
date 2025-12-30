@@ -20,12 +20,12 @@
 
         <sequenceFlow sourceRef="judgeGateway" targetRef="bossTask">
             <!-- 连线条件：金额 >= 5000 -->
-            <conditionExpression xsi:type="tFormalExpression">${money >= 5000}</conditionExpression>
+            <conditionExpression xsi:type="tFormalExpression">${money >= 50000}</conditionExpression>
         </sequenceFlow>
 
         <sequenceFlow sourceRef="judgeGateway" targetRef="systemAuditTask">
             <!-- 连线条件：金额 < 5000，直接跳过老板 -->
-            <conditionExpression xsi:type="tFormalExpression">${money &lt; 5000}</conditionExpression>
+            <conditionExpression xsi:type="tFormalExpression">${money &lt; 50000}</conditionExpression>
         </sequenceFlow>
 
         <!-- 3. 老板审批 -->

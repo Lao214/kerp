@@ -6,11 +6,14 @@ package com.example.kerp.modules.psi.entity;/*
  *@create 2025/12/1 16:50
  */
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.example.kerp.common.entity.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -25,4 +28,14 @@ public class PurchaseOrderItem extends BaseEntity {
     private BigDecimal unitPrice;
     private BigDecimal totalPrice;
     private String remark;
+
+    // ⚡️ 新增字段：用于接收前端传来的 WMS 信息
+    @TableField(exist = false)
+    private String batchNo;       // 批次号 (仅批次管理有效)
+
+    @TableField(exist = false)
+    private LocalDate expireDate; // 过期日期
+
+    @TableField(exist = false)
+    private List<String> snList;  // SN列表 (仅序列号管理有效)
 }

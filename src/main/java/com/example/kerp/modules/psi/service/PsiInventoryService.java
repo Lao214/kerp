@@ -9,11 +9,14 @@ package com.example.kerp.modules.psi.service;/*
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.example.kerp.modules.psi.entity.PsiInventory;
+import com.example.kerp.modules.psi.entity.PurchaseOrderItem;
 import com.example.kerp.modules.psi.vo.InventoryVO;
 
 public interface PsiInventoryService extends IService<PsiInventory> {
 
     public void increaseStock(Long warehouseId, Long productId, Integer quantity);
+
+    public void increaseStockComplex(Long warehouseId, PurchaseOrderItem item, String orderNo);
 
     public void decreaseStock(Long warehouseId, Long productId, Integer quantity);
 
