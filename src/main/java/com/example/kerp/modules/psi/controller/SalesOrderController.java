@@ -12,9 +12,13 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.kerp.common.annotation.Log;
 import com.example.kerp.common.api.Result;
+import com.example.kerp.modules.psi.dto.PurchaseOrderDTO;
 import com.example.kerp.modules.psi.dto.SalesOrderDTO;
+import com.example.kerp.modules.psi.entity.PsiSerial;
+import com.example.kerp.modules.psi.entity.PurchaseOrderItem;
 import com.example.kerp.modules.psi.entity.SalesOrder;
 import com.example.kerp.modules.psi.entity.SalesOrderItem;
+import com.example.kerp.modules.psi.mapper.PsiSerialMapper;
 import com.example.kerp.modules.psi.service.SalesOrderItemService;
 import com.example.kerp.modules.psi.service.SalesOrderService;
 import org.springframework.beans.BeanUtils;
@@ -23,6 +27,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/psi/sales")
@@ -33,6 +38,9 @@ public class SalesOrderController {
 
     @Autowired
     private SalesOrderItemService itemService;
+
+    @Autowired
+    private PsiSerialMapper serialMapper;
 
     // 销售开单
     @SaCheckPermission("psi:sales:add")
@@ -82,10 +90,28 @@ public class SalesOrderController {
         // 2. 查子表
         List<SalesOrderItem> items = itemService.listWithProductInfo(id);
 
-        // 3. 组装 DTO
+        // 3. 🔥 填充 SN 码 (用于前端回显)
+        for (SalesOrderItem item : items) {
+            // 查一下 psi_serial 表
+            List<String> snList = serialMapper.selectList(new LambdaQueryWrapper<PsiSerial>()
+                            .eq(PsiSerial::getInOrderNo, order.getOrderNo())
+                            .eq(PsiSerial::getProductId, item.getProductId()))
+                    .stream()
+                    .map(PsiSerial::getSnCode)
+                    .collect(Collectors.toList());
+
+            // 塞回去 (虽然数据库没存，但 DTO 里有这个字段)
+            item.setSnList(snList);
+
+            // 顺便把 manageType 也查出来填回去，前端可能要用
+            //item.setManageType(...)
+        }
+
+        // 4. 组装 DTO
         SalesOrderDTO dto = new SalesOrderDTO();
         BeanUtils.copyProperties(order, dto);
         dto.setItems(items);
+
 
         return Result.success(dto);
     }

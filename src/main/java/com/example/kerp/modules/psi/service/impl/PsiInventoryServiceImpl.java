@@ -25,6 +25,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -41,37 +43,6 @@ public class PsiInventoryServiceImpl extends ServiceImpl<PsiInventoryMapper, Psi
     @Autowired
     private BaseProductService productService;
 
-    /**
-     * 增加库存
-     * @param warehouseId 仓库ID
-     * @param productId 商品ID
-     * @param quantity 增加的数量
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public void increaseStock(Long warehouseId, Long productId, Integer quantity) {
-        // 1. 先查查这个仓库有没有这个商品
-        LambdaQueryWrapper<PsiInventory> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(PsiInventory::getWarehouseId, warehouseId)
-                .eq(PsiInventory::getProductId, productId);
-
-        PsiInventory inventory = this.getOne(wrapper);
-
-        if (inventory == null) {
-            // 2. 如果没有，就初始化一条
-            inventory = new PsiInventory();
-            inventory.setWarehouseId(warehouseId);
-            inventory.setProductId(productId);
-            inventory.setStockQuantity(quantity);
-            this.save(inventory);
-        } else {
-            // 3. 如果有，就累加
-            // 这里的写法是非原子性的，高并发会有问题。
-            // 严谨写法是用 SQL: update psi_inventory set stock_quantity = stock_quantity + ? where id = ?
-            // 但对于练手项目，先这样写，逻辑更清晰
-            inventory.setStockQuantity(inventory.getStockQuantity() + quantity);
-            this.updateById(inventory);
-        }
-    }
 
     @Override
     public IPage<InventoryVO> getInventoryPage(Integer page, Integer size, String keyword, Long warehouseId) {
@@ -180,7 +151,6 @@ public class PsiInventoryServiceImpl extends ServiceImpl<PsiInventoryMapper, Psi
      * @param item
      * @param orderNo
      */
-
     @Transactional(rollbackFor = Exception.class)
     public void decreaseStockComplex(Long warehouseId, SalesOrderItem item, String orderNo) {
         BaseProduct product = productService.getById(item.getProductId());
@@ -240,15 +210,85 @@ public class PsiInventoryServiceImpl extends ServiceImpl<PsiInventoryMapper, Psi
         }
     }
 
+
+    /**
+     * 增加库存
+     * @param warehouseId 仓库ID
+     * @param productId 商品ID
+     * @param quantity 增加的数量
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void increaseStock(Long warehouseId, Long productId, Integer quantity) {
+        // 1. 先查查这个仓库有没有这个商品
+        LambdaQueryWrapper<PsiInventory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PsiInventory::getWarehouseId, warehouseId)
+                .eq(PsiInventory::getProductId, productId);
+
+        PsiInventory inventory = this.getOne(wrapper);
+
+        if (inventory == null) {
+            // 2. 如果没有，就初始化一条
+            inventory = new PsiInventory();
+            inventory.setWarehouseId(warehouseId);
+            inventory.setProductId(productId);
+            inventory.setStockQuantity(quantity);
+            this.save(inventory);
+        } else {
+            // 3. 如果有，就累加
+            // 这里的写法是非原子性的，高并发会有问题。
+            // 严谨写法是用 SQL: update psi_inventory set stock_quantity = stock_quantity + ? where id = ?
+            // 但对于练手项目，先这样写，逻辑更清晰
+            inventory.setStockQuantity(inventory.getStockQuantity() + quantity);
+            this.updateById(inventory);
+        }
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public void increaseStockComplex(Long warehouseId, PurchaseOrderItem item, String orderNo) {
-        // 1. 查商品属性
+        Long productId = item.getProductId();
+        Integer addQty = item.getQuantity();
+        BigDecimal purchasePrice = item.getUnitPrice();
+
+        // 1. 获取商品信息
         BaseProduct product = productService.getById(item.getProductId());
+        if (product == null) {
+            throw new RuntimeException("商品不存在: " + productId);
+        }
 
-        // 2. 更新总库存 (psi_inventory) —— 无论什么模式，总数都要加
-        this.increaseStock(warehouseId, item.getProductId(), item.getQuantity());
+        // ============ 🔥 核心算法：移动加权平均法 🔥 ============
+        // 2. 查询当前库存记录
+        LambdaQueryWrapper<PsiInventory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PsiInventory::getWarehouseId, warehouseId)
+                .eq(PsiInventory::getProductId, productId);
+        PsiInventory inventory = this.getOne(wrapper);
 
-        // 3. 分流处理
+        // 3. 计算新的平均成本
+        BigDecimal newAvgCost;
+        if (inventory == null) {
+            inventory = new PsiInventory();
+            inventory.setWarehouseId(warehouseId);
+            inventory.setProductId(productId);
+            inventory.setStockQuantity(0);
+            newAvgCost = purchasePrice; // 首次入库，成本 = 进价
+        } else {
+            // 移动加权平均：(旧值 + 新值) / 总数量
+            BigDecimal oldTotalValue = inventory.getAvgCost().multiply(BigDecimal.valueOf(inventory.getStockQuantity()));
+            BigDecimal newTotalValue = purchasePrice.multiply(BigDecimal.valueOf(addQty));
+            BigDecimal totalQty = BigDecimal.valueOf(inventory.getStockQuantity() + addQty);
+
+            newAvgCost = totalQty.compareTo(BigDecimal.ZERO) > 0
+                    ? oldTotalValue.add(newTotalValue).divide(totalQty, 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+        }
+
+        // =======================================================
+
+        // 4. 更新库存数量和成本（仅此一处更新）
+        inventory.setStockQuantity(inventory.getStockQuantity() + addQty);
+        inventory.setAvgCost(newAvgCost);
+        this.saveOrUpdate(inventory); // 插入或更新 psi_inventory
+
+        // 5. 分流处理 根据管理类型处理批次或序列号
         if (product.getManageType() == 1) {
             // === 批次管理 ===
             if (item.getBatchNo() == null) throw new RuntimeException("批次商品必须填写批次号");
@@ -285,12 +325,16 @@ public class PsiInventoryServiceImpl extends ServiceImpl<PsiInventoryMapper, Psi
             PsiSerial updateEntity = new PsiSerial();
             updateEntity.setStatus(1); // 变更为“在库”
 
-            serialMapper.update(updateEntity, new LambdaQueryWrapper<PsiSerial>()
+            int updatedCount = serialMapper.update(updateEntity, new LambdaQueryWrapper<PsiSerial>()
                     .eq(PsiSerial::getInOrderNo, orderNo)
                     .eq(PsiSerial::getProductId, item.getProductId())
                     .eq(PsiSerial::getStatus, 0)); // 只更新待入库的
 
             // 严谨性校验：如果更新的条数 != item.getQuantity()，说明数据对不上，可以抛异常
+            // 可选：校验数量是否匹配
+            if (updatedCount != addQty) {
+                throw new RuntimeException("序列号数量不匹配：期望 " + addQty + "，实际更新 " + updatedCount);
+            }
         }
     }
 

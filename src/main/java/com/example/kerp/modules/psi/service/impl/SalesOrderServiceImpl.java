@@ -15,12 +15,14 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.kerp.modules.basic.service.BaseCustomerService;
 import com.example.kerp.modules.psi.dto.SalesOrderDTO;
+import com.example.kerp.modules.psi.entity.PsiInventory;
 import com.example.kerp.modules.psi.entity.SalesOrder;
 import com.example.kerp.modules.psi.entity.SalesOrderItem;
 import com.example.kerp.modules.psi.mapper.SalesOrderMapper;
 import com.example.kerp.modules.psi.service.PsiInventoryService;
 import com.example.kerp.modules.psi.service.SalesOrderItemService;
 import com.example.kerp.modules.psi.service.SalesOrderService;
+import org.flowable.engine.RuntimeService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOrder> implements SalesOrderService {
@@ -42,6 +46,9 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
     @Autowired
     private BaseCustomerService customerService; // 注入
 
+    @Autowired
+    private RuntimeService runtimeService; // 注入 Flowable
+
     @Transactional(rollbackFor = Exception.class)
     public void audit(Long orderId) {
         // 1. 查询订单主表
@@ -49,11 +56,13 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         if (order == null) {
             throw new RuntimeException("单据不存在");
         }
-        if (order.getStatus() != 0) {
-            throw new RuntimeException("只能审核草稿状态的单据");
+
+        if (order.getStatus() != 2) {
+            throw new RuntimeException("只能审核【审核中】状态的单据");
         }
 
         // 2. 查询订单明细
+        BigDecimal orderTotalCost = BigDecimal.ZERO;
         List<SalesOrderItem> items = itemService.list(
                 new LambdaQueryWrapper<SalesOrderItem>().eq(SalesOrderItem::getOrderId, orderId)
         );
@@ -64,11 +73,33 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
 
         // 3. 循环扣减库存
         for (SalesOrderItem item : items) {
-            // 调用刚才写的扣减方法，如果不够扣会抛异常，事务自动回滚
+            // 3.1. 查当前仓库该商品的成本
+            PsiInventory inventory = inventoryService.getOne(new LambdaQueryWrapper<PsiInventory>()
+                    .eq(PsiInventory::getWarehouseId, order.getWarehouseId())
+                    .eq(PsiInventory::getProductId, item.getProductId()));
+
+            BigDecimal currentCost = (inventory != null && inventory.getAvgCost() != null)
+                    ? inventory.getAvgCost()
+                    : BigDecimal.ZERO;
+
+            // 3.2. 记录该行成本
+            item.setCostUnitPrice(currentCost);
+            itemService.updateById(item); // 回写到数据库，存档！
+
+            // 3.3. 累加总成本 (数量 * 成本单价)
+            BigDecimal lineCost = currentCost.multiply(new BigDecimal(item.getQuantity()));
+            orderTotalCost = orderTotalCost.add(lineCost);
+
+
+            //3.4 执行扣减库存 (原逻辑) 调用刚才写的扣减方法，如果不够扣会抛异常，事务自动回滚
             inventoryService.decreaseStock(order.getWarehouseId(), item.getProductId(), item.getQuantity());
         }
 
         // 4. 更新状态 -> 已出库(1)
+        // 毛利 = 销售总额 - 总成本
+        BigDecimal profit = order.getTotalAmount().subtract(orderTotalCost);
+        order.setTotalCost(orderTotalCost);
+        order.setTotalProfit(profit);
         order.setStatus(1);
         this.updateById(order);
 
@@ -86,7 +117,8 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
             String timeStamp = String.valueOf(System.currentTimeMillis());
             String suffix = timeStamp.substring(timeStamp.length() - 6);
             dto.setOrderNo("PO" + dateStr + suffix);
-            dto.setStatus(0); // 默认为草稿
+            // 1. 设置状态为 "审批中" (假设 2 代表审批中)
+            dto.setStatus(2); // 默认为草稿
             dto.setCreateBy(StpUtil.getLoginIdAsLong());
         }
 
@@ -124,6 +156,14 @@ public class SalesOrderServiceImpl extends ServiceImpl<SalesOrderMapper, SalesOr
         Long orderId = dto.getId();
         items.forEach(item -> item.setOrderId(orderId));
         itemService.saveBatch(items); // 批量插入
+
+        // 2. 🔥 启动销售流程
+        Map<String, Object> variables = new HashMap<>();
+        // 传入金额供网关判断
+        variables.put("money", dto.getTotalAmount().doubleValue());
+
+        // key: sales_audit (对应 BPMN 的 id)
+        runtimeService.startProcessInstanceByKey("sales_audit", dto.getId().toString(), variables);
 
         return true;
     }

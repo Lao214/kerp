@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://www.flowable.org/processdef">
+
+    <!-- 流程ID: sales_audit -->
+    <process id="sales_audit" name="销售出库审批流程" isExecutable="true">
+        <!--
+        流程从 start 开始。
+        然后通过 sequenceFlow（顺序流）流向第一个任务：销售经理审批。
+         -->
+        <startEvent id="start"/>
+        <sequenceFlow sourceRef="start" targetRef="salesMgrTask"/>
+
+        <!-- 1. 销售经理审批 -->
+        <!--
+            这是一个需要人工处理的任务。
+            分配给用户组 sales_mgr（即销售经理角色）。
+            完成后，流程进入下一步：金额判断网关。
+         -->
+        <userTask id="salesMgrTask" name="销售经理审批" flowable:candidateGroups="sales_mgr"/>
+        <sequenceFlow sourceRef="salesMgrTask" targetRef="amountGateway"/>
+
+        <!-- 2. 金额网关
+            排他网关：根据条件选择唯一一条路径继续执行。
+         -->
+        <exclusiveGateway id="amountGateway"/>
+
+        <!-- > 100000 找老板 -->
+        <sequenceFlow sourceRef="amountGateway" targetRef="bossTask">
+            <conditionExpression xsi:type="tFormalExpression">${money >= 100000}</conditionExpression>
+        </sequenceFlow>
+
+        <!-- < 100000 直接通过 -->
+        <!--
+            ${money}：这是流程变量（Process Variable），通常在启动流程实例时通过 API 传入，例如：
+            runtimeService.startProcessInstanceByKey("sales_audit",  Collections.singletonMap("money", 120000));
+            flowable:candidateGroups="sales_mgr"：表示这个任务可以被 sales_mgr 组内的任意用户领取并处理, flowable:candidateGroups="admin" 同理
+            delegateExpression="${salesAuditDelegate}"：依赖 Spring 容器中名为 salesAuditDelegate 的 Bean，该 Bean 必须实现 org.flowable.engine.delegate.JavaDelegate
+         -->
+        <sequenceFlow sourceRef="amountGateway" targetRef="systemOutTask">
+            <conditionExpression xsi:type="tFormalExpression">${money &lt; 100000}</conditionExpression>
+        </sequenceFlow>
+
+        <!-- 3. 老板审批 -->
+        <userTask id="bossTask" name="总经理复审" flowable:candidateGroups="admin"/>
+        <sequenceFlow sourceRef="bossTask" targetRef="systemOutTask"/>
+
+        <!-- 4. 系统自动出库 (Delegate) -->
+        <serviceTask id="systemOutTask" name="自动扣减库存" flowable:delegateExpression="${salesAuditDelegate}"/>
+        <sequenceFlow sourceRef="systemOutTask" targetRef="end"/>
+
+        <endEvent id="end"/>
+    </process>
+</definitions>

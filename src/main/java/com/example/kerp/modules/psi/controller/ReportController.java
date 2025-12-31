@@ -99,6 +99,25 @@ public class ReportController {
         vo.setSalesTrend(salesTrend);
         vo.setPurchaseTrend(purchaseTrend);
 
+        // 🔥 新增：统计总毛利
+        BigDecimal profit = salesService.list(new LambdaQueryWrapper<SalesOrder>()
+                        .eq(SalesOrder::getStatus, 1)) // 已审核
+                .stream()
+                .map(SalesOrder::getTotalProfit)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        vo.setProfit(profit);
+
+        // 🔥 新增：统计今日毛利
+        BigDecimal todayProfit = salesService.list(new LambdaQueryWrapper<SalesOrder>()
+                        .eq(SalesOrder::getOrderDate, today)
+                        .eq(SalesOrder::getStatus, 1)) // 已审核
+                .stream()
+                .map(SalesOrder::getTotalProfit)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        vo.setTodayProfit(todayProfit);
+
         return Result.success(vo);
     }
 }

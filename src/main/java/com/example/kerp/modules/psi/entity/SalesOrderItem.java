@@ -30,6 +30,7 @@ public class SalesOrderItem {
     private BigDecimal unitPrice;
     private BigDecimal totalPrice;
     private String remark;
+    private BigDecimal costUnitPrice;
 
     @TableField(exist = false)
     private String productCode;

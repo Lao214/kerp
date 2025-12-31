@@ -27,5 +27,7 @@ public class SalesOrder extends BaseEntity {
     private Integer status; // 0:草稿 1:已审核
     private String remark;
     private Long createBy;
+    private BigDecimal totalCost;
+    private BigDecimal totalProfit;
 }
 

@@ -8,10 +8,12 @@ package com.example.kerp.modules.system.controller;
  */
 
 import cn.dev33.satoken.stp.StpUtil;
+import com.example.kerp.common.annotation.Log;
 import com.example.kerp.common.api.Result;
 import com.example.kerp.modules.system.service.SysRoleService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
+import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.task.api.Task;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -49,22 +51,33 @@ public class FlowController {
         // 查询分配给这些角色的任务
         List<Task> tasks = taskService.createTaskQuery()
                 .taskCandidateGroupIn(groups)
+                .orderByTaskCreateTime().desc() // 按时间倒序
                 .list();
 
-        // 转成 Map 返回给前端
         List<Map<String, Object>> list = new ArrayList<>();
+
         for (Task task : tasks) {
             Map<String, Object> map = new HashMap<>();
             map.put("taskId", task.getId());
             map.put("taskName", task.getName());
             map.put("createTime", task.getCreateTime());
-            // 关联的业务ID (采购单ID)
-            // 需要通过 runtimeService 查流程实例拿到 BusinessKey
-            String processInstanceId = task.getProcessInstanceId();
-            String businessKey = runtimeService.createProcessInstanceQuery()
-                    .processInstanceId(processInstanceId)
-                    .singleResult().getBusinessKey();
-            map.put("orderId", businessKey);
+
+            // 获取流程实例，从而获取 ProcessDefinitionKey 和 BusinessKey
+            ProcessInstance processInstance = runtimeService.createProcessInstanceQuery()
+                    .processInstanceId(task.getProcessInstanceId())
+                    .singleResult();
+
+            if (processInstance != null) {
+                map.put("orderId", processInstance.getBusinessKey());
+
+                // 🔥 核心：根据流程Key判断业务类型
+                String key = processInstance.getProcessDefinitionKey();
+                if ("purchase_audit".equals(key)) {
+                    map.put("bizType", "PURCHASE");
+                } else if ("sales_audit".equals(key)) {
+                    map.put("bizType", "SALE");
+                }
+            }
             list.add(map);
         }
         return Result.success(list);
@@ -72,8 +85,10 @@ public class FlowController {
 
     /**
      * 2. 审批通过 (完成任务)
+     *
      */
     @PostMapping("/complete/{taskId}")
+    @Log(title = "待办事项", businessType = "审批通过 (完成任务)")
     public Result<Boolean> complete(@PathVariable String taskId) {
         taskService.complete(taskId);
         return Result.success(true);

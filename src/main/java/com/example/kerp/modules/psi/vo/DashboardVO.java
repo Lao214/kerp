@@ -19,6 +19,8 @@ public class DashboardVO {
     private BigDecimal todayPurchase; // 今日采购额
     private Integer totalStock;       // 当前总库存数
     private BigDecimal totalSales;    // 累计销售额
+    private BigDecimal todayProfit;  // 新增：今日毛利
+    private BigDecimal profit;
 
     // 图表数据 (近7天趋势)
     private List<String> dates;            // X轴：日期 ["11-01", "11-02"...]
