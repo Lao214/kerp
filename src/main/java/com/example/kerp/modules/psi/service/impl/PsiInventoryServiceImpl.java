@@ -24,6 +24,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -334,6 +335,75 @@ public class PsiInventoryServiceImpl extends ServiceImpl<PsiInventoryMapper, Psi
             // 可选：校验数量是否匹配
             if (updatedCount != addQty) {
                 throw new RuntimeException("序列号数量不匹配：期望 " + addQty + "，实际更新 " + updatedCount);
+            }
+        }
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void salesReturnStock(Long warehouseId, PsiSalesReturnItem item, String returnNo) {
+        // 1. 增加总库存 (简单)
+        this.increaseStock(warehouseId, item.getProductId(), item.getQuantity());
+
+        BaseProduct product = productService.getById(item.getProductId());
+
+        // 2. 处理 SN 码的逆向流转 (难点)
+        if (product.getManageType() == 2) {
+            List<String> snList = item.getSnList(); // 前端录入的要退的SN
+            if (snList == null || snList.size() != item.getQuantity()) {
+                throw new RuntimeException("退货SN码数量不一致");
+            }
+
+            for (String sn : snList) {
+                // 校验：这个SN是不是真的卖出去了？
+                PsiSerial serial = serialMapper.selectOne(new LambdaQueryWrapper<PsiSerial>()
+                        .eq(PsiSerial::getSnCode, sn));
+
+                if (serial == null) {
+                    throw new RuntimeException("非法SN码：" + sn);
+                }
+                if (serial.getStatus() != 2) { // 2=已售
+                    throw new RuntimeException("SN码 " + sn + " 当前状态不是[已售]，无法退货");
+                }
+
+                // 核心：状态改回 1 (在库)
+                serial.setStatus(1);
+                // 记录是从哪个退货单回来的 (可选：覆盖 in_order_no 或者加个 return_order_no 字段)
+                // 这里我们简单处理，把 out_order_no 清空，表示它没卖出去
+                serial.setOutOrderNo(null);
+                serialMapper.updateById(serial);
+            }
+        }
+
+        // 3. 处理批次 (如果是批次商品)
+        // 逻辑：最好能找到原批次加回去。如果找不到，就当新批次入库。
+        // 3. 🔥🔥🔥 补全：处理批次库存回滚 🔥🔥🔥
+        else if (product.getManageType() == 1) {
+            // 前端传来的退货明细里，必须包含 batchNo
+            String batchNo = item.getBatchNo();
+            if (!StringUtils.hasText(batchNo)) {
+                throw new RuntimeException("批次商品退货必须指定批次号");
+            }
+
+            // 查该仓库下有没有这个批次的记录
+            PsiBatch batch = batchMapper.selectOne(new LambdaQueryWrapper<PsiBatch>()
+                    .eq(PsiBatch::getWarehouseId, warehouseId)
+                    .eq(PsiBatch::getProductId, item.getProductId())
+                    .eq(PsiBatch::getBatchNo, batchNo));
+
+            if (batch != null) {
+                // A. 如果批次记录还在，直接加数量
+                batch.setQuantity(batch.getQuantity() + item.getQuantity());
+                batchMapper.updateById(batch);
+            } else {
+                // B. 如果批次记录没了 (比如之前卖光了被删了，或者这是一个新批次)，需要重新创建
+                // 注意：这里最好让前端把过期日期 expireDate 也传回来，否则只能置空或默认
+                PsiBatch newBatch = new PsiBatch();
+                newBatch.setWarehouseId(warehouseId);
+                newBatch.setProductId(item.getProductId());
+                newBatch.setBatchNo(batchNo);
+                newBatch.setQuantity(item.getQuantity());
+                newBatch.setExpireDate(item.getExpireDate()); // 最好从前端传，或者去查历史入库记录
+                batchMapper.insert(newBatch);
             }
         }
     }

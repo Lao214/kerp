@@ -9,6 +9,7 @@ package com.example.kerp.modules.psi.service;/*
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.example.kerp.modules.psi.entity.PsiInventory;
+import com.example.kerp.modules.psi.entity.PsiSalesReturnItem;
 import com.example.kerp.modules.psi.entity.PurchaseOrderItem;
 import com.example.kerp.modules.psi.vo.InventoryVO;
 
@@ -22,4 +23,6 @@ public interface PsiInventoryService extends IService<PsiInventory> {
 
     // 👇 新增查询接口
     IPage<InventoryVO> getInventoryPage(Integer page, Integer size, String keyword, Long warehouseId);
+
+    void salesReturnStock(Long warehouseId, PsiSalesReturnItem item, String returnNo);
 }
