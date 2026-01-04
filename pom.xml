@@ -121,6 +121,12 @@
 			<version>7.0.0</version> <!-- 或者 6.8.0 比较稳定 -->
 		</dependency>
 
+		<!-- websocket -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-websocket</artifactId>
+		</dependency>
+
 	</dependencies>
 
 	<build>
