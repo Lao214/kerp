@@ -62,7 +62,7 @@ kerp/
 │   └── test/                 # 测试代码
 ├── .gitattributes            # Git属性配置
 ├── .gitignore                # Git忽略配置
-├── dump-kerp-202512240913.sql # 数据库备份文件
+├── dump-kerp-202601081143.sql # 数据库备份文件
 ├── mvnw                     # Maven包装器脚本(Linux)
 ├── mvnw.cmd                 # Maven包装器脚本(Windows)
 ├── pom.xml                  # Maven项目配置
@@ -121,7 +121,7 @@ CREATE DATABASE IF NOT EXISTS kerp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode
 
 2. 导入数据库备份：
 ```bash
-mysql -u root -p kerp < dump-kerp-202512240913.sql
+mysql -u root -p kerp < dump-kerp-202601081143.sql
 ```
 
 #### 2.3 配置应用
